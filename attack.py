@@ -1,10 +1,20 @@
-import motor
-from hub import port
-import runloop
-import color_sensor
+"""
+Pybricks port of the original `attack.py` MovementRobot.
 
-# Custom logger without logging module
+This keeps the original behavior and logging while using Pybricks
+`Motor` and `ColorSensor`. The color sensor readings are mapped into
+0-36-like "angle" buckets to preserve the original decision logic.
+"""
+
+from pybricks.hubs import PrimeHub
+from pybricks.pupdevices import Motor, ColorSensor
+from pybricks.parameters import Port
+from pybricks.tools import wait
+
+
+# Custom logger
 _log_counter = 0
+
 
 def log(level, message):
     global _log_counter
@@ -12,34 +22,52 @@ def log(level, message):
     print("[{}] : {}".format(level, message))
 
 
+def _map_to_angle_bucket(value, in_min=0, in_max=100, out_max=36):
+    """Map sensor value (e.g. reflection 0-100) to 0..out_max bucket."""
+    try:
+        v = int((value - in_min) * out_max / (in_max - in_min) + 0.5)
+    except Exception:
+        return 0
+    return max(0, min(out_max, v))
+
+
 class MovementRobot:
-    LEFT_MOTOR = port.F
-    RIGHT_MOTOR = port.B
-    FRONT_MOTOR = port.E
-    BACK_MOTOR = port.A
-    SENSOR_PORT = port.C
+    LEFT_MOTOR = Port.F
+    RIGHT_MOTOR = Port.B
+    FRONT_MOTOR = Port.E
+    BACK_MOTOR = Port.A
+    SENSOR_PORT = Port.C
 
     VALID_FRONT_SPREAD = {0, 4, 8, 12, 16, 20, 24, 28, 32, 36}
 
     def __init__(self):
+        self.hub = PrimeHub()
+        self.left = Motor(self.LEFT_MOTOR)
+        self.right = Motor(self.RIGHT_MOTOR)
+        self.front = Motor(self.FRONT_MOTOR)
+        self.back = Motor(self.BACK_MOTOR)
+        self.color = ColorSensor(self.SENSOR_PORT)
+
         self.turn_gain = 80
         self.drive_speed = 1000
         log("INFO", "MovementRobot initialized with turn_gain=80, drive_speed=1000")
 
     def front_sensor_angle(self):
-        return color_sensor.reflection(self.SENSOR_PORT)
+        # map reflection (0-100) into 0-36 pseudo-angle
+        return _map_to_angle_bucket(self.color.reflection())
 
     def back_sensor_angle(self):
-        color = color_sensor.rgbi(self.SENSOR_PORT)
-        return color[2]
+        r, g, b = self.color.rgb()
+        # use blue channel as a proxy and map 0-255 into 0-36
+        return _map_to_angle_bucket(b, in_min=0, in_max=255)
 
     def front_sensor_strength(self):
-        color = color_sensor.rgbi(self.SENSOR_PORT)
-        return color[0]
+        r, g, b = self.color.rgb()
+        return r
 
     def back_sensor_strength(self):
-        color = color_sensor.rgbi(self.SENSOR_PORT)
-        return color[1]
+        r, g, b = self.color.rgb()
+        return g
 
     def read_sensor(self):
         result = (
@@ -52,16 +80,16 @@ class MovementRobot:
         return result
 
     def run_left_motor(self, speed):
-        motor.run(self.LEFT_MOTOR, speed)
+        self.left.run(int(speed))
 
     def run_right_motor(self, speed):
-        motor.run(self.RIGHT_MOTOR, speed)
+        self.right.run(int(speed))
 
     def run_front_motor(self, speed):
-        motor.run(self.FRONT_MOTOR, speed)
+        self.front.run(int(speed))
 
     def run_back_motor(self, speed):
-        motor.run(self.BACK_MOTOR, speed)
+        self.back.run(int(speed))
 
     def go_forward(self, speed):
         log("INFO", "Robot moving forward with speed={}".format(speed))
@@ -178,7 +206,7 @@ class MovementRobot:
                 self.stop_all_motors()
                 break
 
-    async def main(self):
+    def main(self):
         while True:
             front_sensor_angle, front_sensor_strength, back_sensor_angle, back_sensor_strength = self.read_sensor()
             delta_front = front_sensor_angle - 20
@@ -218,4 +246,15 @@ class MovementRobot:
                     self.go_backwards(self.drive_speed)
 
 
-runloop.run(MovementRobot().main())
+def run():
+    robot = MovementRobot()
+    try:
+        while True:
+            robot.main()
+            wait(10)
+    except KeyboardInterrupt:
+        robot.stop_all_motors()
+
+
+if __name__ == "__main__":
+    run()

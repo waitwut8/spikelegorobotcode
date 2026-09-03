@@ -29,24 +29,59 @@ class Sensor:
     def __init__(self, port=SENSOR_PORT):
         self.color = ColorSensor(port)
 
+    def _read_rgb(self):
+        """Compatibility: return (r,g,b) using available sensor API."""
+        try:
+            return self.color.rgb()
+        except AttributeError:
+            pass
+        try:
+            h, s, v = self.color.hsv()
+            v_int = int(v if isinstance(v, int) else (v * 255))
+            return (v_int, v_int, v_int)
+        except Exception:
+            pass
+        try:
+            from pybricks.parameters import Color
+            col = self.color.color()
+            mapping = {
+                Color.BLACK: (0, 0, 0),
+                Color.BLUE: (0, 0, 255),
+                Color.GREEN: (0, 255, 0),
+                Color.YELLOW: (255, 255, 0),
+                Color.RED: (255, 0, 0),
+                Color.WHITE: (255, 255, 255),
+                Color.BROWN: (165, 42, 42),
+            }
+            return mapping.get(col, (0, 0, 0))
+        except Exception:
+            pass
+        try:
+            r = self.color.reflection()
+            return (r, r, r)
+        except Exception:
+            return (0, 0, 0)
+
     def front_angle(self):
         # use reflection as a rough angle/position cue
         return self.color.reflection()
 
     def front_strength(self):
-        r, g, b = self.color.rgb()
+        r, g, b = self._read_rgb()
         return r
 
     def back_angle(self):
-        r, g, b = self.color.rgb()
+        r, g, b = self._read_rgb()
         return b
 
     def back_strength(self):
-        r, g, b = self.color.rgb()
+        r, g, b = self._read_rgb()
         return g
 
     def read(self):
-        return (self.front_angle(), self.front_strength(), self.back_angle(), self.back_strength())
+        r = (self.front_angle(), self.front_strength(), self.back_angle(), self.back_strength())
+        print("SENSOR READ:\n{}".format(r))
+        return r
 
 
 class MotorController:
@@ -66,6 +101,7 @@ class MotorController:
         inv = self.inversions.get(key, 1)
         scaled = int(max(-self.max_speed, min(self.max_speed, speed * self.scale * inv)))
         if force or self._last.get(key) != scaled:
+            print("MOTOR RUN:\nkey={} motor={} speed={}".format(key, motor, scaled))
             motor.run(scaled)
             self._last[key] = scaled
 

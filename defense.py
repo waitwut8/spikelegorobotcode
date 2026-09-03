@@ -1,182 +1,138 @@
-"""
-Pybricks-based defensive robot implementing two scenarios:
 
-Scenario 1: face the ball and push it forward until it passes a midpoint
-           or until the ball approaches the wall (switch to scenario 2).
-Scenario 2: move slowly toward the ball; if the ball crosses back across
-           the midpoint (i.e. retreats past the midpoint), retreat.
-"""
+import runloop
+import motor
+import color_sensor
+from hub import port
 
-from pybricks.hubs import PrimeHub
-from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor
-from pybricks.parameters import Port
-from pybricks.tools import wait
+LEFT_PORT, RIGHT_PORT, FRONT_PORT, BACK_PORT, SENSOR_PORT, WALL_PORT = port.E, port.A, port.F, port.B, port.C, port.D
+class Sensor:
+    """Sensor wrapper for reading angles and strengths."""
+
+    def __init__(self, port_=SENSOR_PORT):
+        self.port = port_
+
+    @staticmethod
+    def _dec(v):
+        return v // 4
+
+    def read(self):
+        # Reflection is its own distinct reading, separate from the RGB channels
+        reflection = color_sensor.reflection(self.port)
+        # color_sensor.rgbi() returns (red, green, blue, intensity)
+        r, g, b, _ = color_sensor.rgbi(self.port)
+        data = (self._dec(reflection), r, self._dec(b), g)
+        print("SENSOR READ:\n{}".format(data))
+        return data
 
 
-# Ports (adjust to your robot)
-LEFT_PORT = Port.F
-RIGHT_PORT = Port.B
-COLOR_PORT = Port.C
-DISTANCE_PORT = Port.D
-
-
-class DefensiveRobot:
-    MIDPOINT_DISTANCE = 300    # mm ball must move to be considered past midpoint
-    WALL_DISTANCE_THRESHOLD = 150  # mm - when close to wall, enter scenario 2
-    BALL_CLOSE_DISTANCE = 50       # mm - (unused for retreat; kept for tuning)
-    PUSH_SPEED = 600               # deg/s for push
-    SLOW_SPEED = 250               # deg/s for slow approach
-    TURN_SPEED = 150               # deg/s for turning while aiming
+class MotorController:
+    """Encapsulates motor port operations and movement primitives."""
 
     def __init__(self):
-        self.hub = PrimeHub()
-        self.left = Motor(LEFT_PORT)
-        self.right = Motor(RIGHT_PORT)
-        self.color = ColorSensor(COLOR_PORT)
-        self.ultra = UltrasonicSensor(DISTANCE_PORT)
+        self.ports = (LEFT_PORT, RIGHT_PORT, FRONT_PORT, BACK_PORT)
 
-        self.current_scenario = 1
-        self.ball_initial_distance = None
-
-    def get_distance(self):
-        try:
-            return self.ultra.distance()
-        except Exception:
-            return None
-
-    def get_reflection(self):
-        try:
-            return self.color.reflection()
-        except Exception:
-            return None
-
-    # Basic motor helpers (differential drive assumed)
-    def drive_forward(self, speed):
-        self.left.run(speed)
-        self.right.run(speed)
-
-    def drive_backward(self, speed):
-        self.left.run(-speed)
-        self.right.run(-speed)
-
-    def turn_left(self, speed):
-        self.left.run(-speed)
-        self.right.run(speed)
-
-    def turn_right(self, speed):
-        self.left.run(speed)
-        self.right.run(-speed)
+    def apply(self, speeds):
+        for p, spd in zip(self.ports, speeds):
+            print("MOTOR RUN:\nmotor={} speed={}".format(p, spd))
+            motor.run(p, spd)
 
     def stop(self):
-        self.left.stop()
-        self.right.stop()
-
-    def aim_at_ball(self):
-        """Simple aiming using color reflection as lateral cue.
-        Returns True when roughly centered.
-        """
-        reflection = self.get_reflection()
-        if reflection is None:
-            return False
-
-        # Assumed center reflection; adjust as needed for your sensor/ball
-        target = 50
-        error = reflection - target
-        deadband = 6
-
-        if abs(error) <= deadband:
-            self.stop()
-            return True
-
-        # Turn proportionally (simple bang-bang for clarity)
-        if error > 0:
-            self.turn_right(self.TURN_SPEED)
-        else:
-            self.turn_left(self.TURN_SPEED)
-
-        return False
-
-    def scenario_1_push_ball(self):
-        dist = self.get_distance()
-        if dist is None:
-            print("[S1] No distance reading")
-            return
-
-        if self.ball_initial_distance is None:
-            self.ball_initial_distance = dist
-            print(f"[S1] initial ball distance {dist}mm")
-
-        traveled = self.ball_initial_distance - dist
-        print(f"[S1] ball dist={dist} traveled={traveled}")
-
-        # Switch to scenario 2 if ball is too close to wall
-        if dist < self.WALL_DISTANCE_THRESHOLD:
-            print("[S1] near wall -> switching to Scenario 2")
-            self.current_scenario = 2
-            self.ball_initial_distance = None
-            self.stop()
-            return
-
-        # Aim first, then push
-        if not self.aim_at_ball():
-            return
-
-        # Push forward
-        print("[S1] pushing ball")
-        self.drive_forward(self.PUSH_SPEED)
-
-    def scenario_2_defend_goal(self):
-        dist = self.get_distance()
-        if dist is None:
-            print("[S2] No distance reading")
-            return
-
-        if self.ball_initial_distance is None:
-            self.ball_initial_distance = dist
-            print(f"[S2] entry distance {dist}mm")
-
-        traveled = self.ball_initial_distance - dist
-        print(f"[S2] ball dist={dist} traveled={traveled}")
-
-        # If ball has crossed back across the midpoint (i.e. negative travel past midpoint), retreat
-        if traveled < -self.MIDPOINT_DISTANCE:
-            print("[S2] ball crossed midpoint backward -> retreat")
-            self.drive_backward(self.SLOW_SPEED)
-            return
-
-        # Aim at ball then slowly approach
-        if not self.aim_at_ball():
-            return
-
-        print("[S2] moving slowly toward ball")
-        self.drive_forward(self.SLOW_SPEED)
-
-        # If ball moves far away from goal, return to scenario 1
-        if dist > self.WALL_DISTANCE_THRESHOLD + 100:
-            print("[S2] ball moved away -> back to Scenario 1")
-            self.current_scenario = 1
-            self.ball_initial_distance = None
-
-    def update(self):
-        try:
-            if self.current_scenario == 1:
-                self.scenario_1_push_ball()
-            else:
-                self.scenario_2_defend_goal()
-        except Exception as e:
-            print("[ERROR]", e)
-            self.stop()
+        for p in self.ports:
+            motor.stop(p)
 
 
-def main():
-    r = DefensiveRobot()
-    try:
+class Robot:
+    """High-level robot behavior combining sensors and motors."""
+
+    DIR = dict(front=5, behind=1, dead_left=0, dead_right=2,
+            nw={1, 2}, ne={2, 3}, sw={2, 3}, se={1, 2}, none=0)
+
+    MOVE = {
+        "fwd":lambda s: (-s,s,0,0),
+        "back":lambda s: ( s, -s,0,0),
+        "left":lambda s: ( 0,0,s, -s),
+        "right": lambda s: ( 0,0, -s,s),
+        "nw":    lambda s: (-s,s,s, -s),
+        "ne":    lambda s: ( s, -s, -s,s),
+        "sw":    lambda s: ( s, -s,s, -s),
+        "se":    lambda s: (-s,s, -s,s),
+        "rot":lambda s: ( s,s,s,s),
+        "stop":lambda s: ( 0,0,0,0),
+    }
+
+    def __init__(self):
+        self.s, self.m = Sensor(), MotorController()
+        self.k, self.vy, self.state = 80, 1000, "idle"
+
+    def _go(self, name, speed=0):
+        self.m.apply(self.MOVE[name](speed))
+
+    def should_robot_stop(self, f, b):
+        return f == self.DIR["front"] or b == self.DIR["behind"]
+
+    async def face_ball(self, speed):
         while True:
-            r.update()
-            wait(100)
-    except KeyboardInterrupt:
-        r.stop()
+            f, _, b, _ = self.s.read()
+            print((f, b))
+            if f != 20:
+                self._go("rot", speed)
+            else:
+                self._go("stop")
+                print("Ball is in the front")
+                break
+            await runloop.sleep_ms(10)
+
+    async def kick_ball_and_stop(self, speed):
+        self._go("fwd", speed)
+        while True:
+            f, _, b, _ = self.s.read()
+            if self.should_robot_stop(f, b):
+                self._go("stop")
+                break
+            await runloop.sleep_ms(10)
+
+    def _front(self, f):
+        print("front sensor activated")
+        vx = (f - 5) * self.k
+        if f in {4, 5, 6}:
+            self.m.apply((0, 0, 0, 0))
+            self._go("fwd", self.vy)
+        elif f in {1, 8}:
+            self.m.apply((0, 0, 0, 0))
+            self._go("back", self.vy)
+        else:
+            self._go("fwd", self.vy)
+            self._go("left", vx)
+
+    def _back(self, b):
+        print("back sensor activated")
+        vx = (b - 5) * self.k
+        print("vx = ", vx)
+        if b == 5:
+            self.m.apply((0, 0, 0, 0))
+            self._go("left", self.vy*10000)
+        else:
+            self.m.apply((0, 0, 0, 0))
+            self._go("back", self.vy*10000)
+
+            # An else statement should be used here
+            # So if none of the conditions above were filled (aka robot went past the midpoint line) start moving back
+            # E.g motor_run backwards
+
+    async def main(self):
+        handlers = {"front": self._front, "back": self._back}
+        while True:
+            f, _, b, _ = self.s.read()
+            print(f, b)
+            if f and b in range(10):# Probably add extra conditions here, e.g. Distance_Sensor <= x cm
+                self.state = "front"
+            elif b and not f:# Here as well Distance_Sensor <= x cm
+                self.state = "back"
+            else:
+                self.state = "idle"
+            if self.state in handlers:
+                handlers[self.state](f if self.state == "front" else b)
+            await runloop.sleep_ms(10)
 
 
-if __name__ == "__main__":
-    main()
+runloop.run(Robot().main())

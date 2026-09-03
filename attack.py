@@ -1,260 +1,230 @@
-"""
-Pybricks port of the original `attack.py` MovementRobot.
+from pybricks.pupdevices import Motor
+from pybricks.parameters import Port, Direction
+from pybricks.tools import wait, Stop
+from pybricks.robotics import run_task
 
-This keeps the original behavior and logging while using Pybricks
-`Motor` and `ColorSensor`. The color sensor readings are mapped into
-0-36-like "angle" buckets to preserve the original decision logic.
-"""
+LMP = Port.A
+RMP = Port.B
+FMP = Port.C
+BMP = Port.D
 
-from pybricks.hubs import PrimeHub
-from pybricks.pupdevices import Motor, ColorSensor
-from pybricks.parameters import Port
-from pybricks.tools import wait
+LDIR = Direction.CLOCKWISE
+RDIR = Direction.CLOCKWISE
+FDIR = Direction.CLOCKWISE
+BDIR = Direction.CLOCKWISE
 
-
-# Custom logger
-_log_counter = 0
-
-
-def log(level, message):
-    global _log_counter
-    _log_counter += 1
-    print("[{}] : {}".format(level, message))
+DS = 600
+TG = 8
+VFS = {18, 19, 20, 21, 22}
 
 
-def _map_to_angle_bucket(value, in_min=0, in_max=100, out_max=36):
-    """Map sensor value (e.g. reflection 0-100) to 0..out_max bucket."""
-    try:
-        v = int((value - in_min) * out_max / (in_max - in_min) + 0.5)
-    except Exception:
-        return 0
-    return max(0, min(out_max, v))
-
-
-class MovementRobot:
-    LEFT_MOTOR = Port.F
-    RIGHT_MOTOR = Port.B
-    FRONT_MOTOR = Port.E
-    BACK_MOTOR = Port.A
-    SENSOR_PORT = Port.C
-
-    VALID_FRONT_SPREAD = {0, 4, 8, 12, 16, 20, 24, 28, 32, 36}
-
+class MR:
     def __init__(self):
-        self.hub = PrimeHub()
-        self.left = Motor(self.LEFT_MOTOR)
-        self.right = Motor(self.RIGHT_MOTOR)
-        self.front = Motor(self.FRONT_MOTOR)
-        self.back = Motor(self.BACK_MOTOR)
-        self.color = ColorSensor(self.SENSOR_PORT)
+        self.lm = Motor(LMP, LDIR)
+        self.rm = Motor(RMP, RDIR)
+        self.fm = Motor(FMP, FDIR)
+        self.bm = Motor(BMP, BDIR)
 
-        self.turn_gain = 80
-        self.drive_speed = 1000
-        log("INFO", "MovementRobot initialized with turn_gain=80, drive_speed=1000")
+        self.ds = DS
+        self.tg = TG
+        self.vfs = VFS
 
-    def front_sensor_angle(self):
-        # map reflection (0-100) into 0-36 pseudo-angle
-        return _map_to_angle_bucket(self.color.reflection())
+    def fa(self):
+        return 0
 
-    def back_sensor_angle(self):
-        r, g, b = self.color.rgb()
-        # use blue channel as a proxy and map 0-255 into 0-36
-        return _map_to_angle_bucket(b, in_min=0, in_max=255)
+    def fs(self):
+        return 0
 
-    def front_sensor_strength(self):
-        r, g, b = self.color.rgb()
+    def ba(self):
+        return 0
+
+    def bs(self):
+        return 0
+
+    def rd(self):
+        r = (self.fa(), self.fs(), self.ba(), self.bs())
+        print("DEBUG: Sensor reading:", r)
         return r
 
-    def back_sensor_strength(self):
-        r, g, b = self.color.rgb()
-        return g
+    def rl(self, s):
+        print("MOTOR RUN:\nleft_motor={} speed={}".format(self.lm, s))
+        self.lm.run(s)
 
-    def read_sensor(self):
-        result = (
-            self.front_sensor_angle(),
-            self.front_sensor_strength(),
-            self.back_sensor_angle(),
-            self.back_sensor_strength(),
-        )
-        log("DEBUG", "Sensor reading: angle={}, front_strength={}, back_angle={}, back_strength={}".format(result[0], result[1], result[2], result[3]))
-        return result
+    def rr(self, s):
+        print("MOTOR RUN:\nright_motor={} speed={}".format(self.rm, s))
+        self.rm.run(s)
 
-    def run_left_motor(self, speed):
-        self.left.run(int(speed))
+    def rf(self, s):
+        print("MOTOR RUN:\nfront_motor={} speed={}".format(self.fm, s))
+        self.fm.run(s)
 
-    def run_right_motor(self, speed):
-        self.right.run(int(speed))
+    def rb(self, s):
+        print("MOTOR RUN:\nback_motor={} speed={}".format(self.bm, s))
+        self.bm.run(s)
 
-    def run_front_motor(self, speed):
-        self.front.run(int(speed))
+    def stop(self):
+        self.lm.stop()
+        self.rm.stop()
+        self.fm.stop()
+        self.bm.stop()
 
-    def run_back_motor(self, speed):
-        self.back.run(int(speed))
+    def gft(self, s):
+        print("Robot moving forward with speed={}".format(s))
+        self.lm.run_time(-1000, 2000, Stop.BRAKE)
+        self.rm.run_time(1000, 2000, Stop.BRAKE)
 
-    def go_forward(self, speed):
-        log("INFO", "Robot moving forward with speed={}".format(speed))
-        self.run_left_motor(-speed)
-        self.run_right_motor(speed)
+    def glt(self, s):
+        print("Robot moving left with speed={}".format(s))
+        self.fm.run_time(-1000, 2000, Stop.BRAKE)
+        self.bm.run_time(1000, 2000, Stop.BRAKE)
 
-    def go_backwards(self, speed):
-        log("INFO", "Robot moving backwards with speed={}".format(speed))
-        self.run_left_motor(speed)
-        self.run_right_motor(-speed)
+    def gf(self, s):
+        print("Robot moving forward with speed={}".format(s))
+        self.rl(-s)
+        self.rr(s)
 
-    def go_left(self, speed):
-        log("INFO", "Robot moving left with speed={}".format(speed))
-        self.run_front_motor(speed)
-        self.run_back_motor(-speed)
+    def gb(self, s):
+        print("Robot moving backwards with speed={}".format(s))
+        self.rl(s)
+        self.rr(-s)
 
-    def go_right(self, speed):
-        log("INFO", "Robot moving right with speed={}".format(speed))
-        self.run_front_motor(-speed)
-        self.run_back_motor(speed)
+    def gl(self, s):
+        print("Robot moving left with speed={}".format(s))
+        self.rf(s)
+        self.rb(-s)
 
-    def go_north_west(self, speed):
-        self.run_front_motor(speed)
-        self.run_back_motor(-speed)
-        self.run_left_motor(-speed)
-        self.run_right_motor(speed)
+    def gr(self, s):
+        print("Robot moving right with speed={}".format(s))
+        self.rf(-s)
+        self.rb(s)
 
-    def go_north_east(self, speed):
-        self.run_front_motor(-speed)
-        self.run_back_motor(speed)
-        self.run_left_motor(speed)
-        self.run_right_motor(-speed)
+    def gnw(self, s):
+        self.rf(s)
+        self.rb(-s)
+        self.rl(-s)
+        self.rr(s)
 
-    def go_south_west(self, speed):
-        self.run_front_motor(speed)
-        self.run_back_motor(-speed)
-        self.run_left_motor(speed)
-        self.run_right_motor(-speed)
+    def gne(self, s):
+        self.rf(-s)
+        self.rb(s)
+        self.rl(s)
+        self.rr(-s)
 
-    def go_south_east(self, speed):
-        self.run_front_motor(-speed)
-        self.run_back_motor(speed)
-        self.run_left_motor(-speed)
-        self.run_right_motor(speed)
+    def gsw(self, s):
+        self.rf(s)
+        self.rb(-s)
+        self.rl(s)
+        self.rr(-s)
 
-    def robot_rotate(self, speed):
-        log("INFO", "Robot rotating with speed={}".format(speed))
-        self.run_left_motor(speed)
-        self.run_right_motor(speed)
-        self.run_back_motor(speed)
-        self.run_front_motor(speed)
+    def gse(self, s):
+        self.rf(-s)
+        self.rb(s)
+        self.rl(-s)
+        self.rr(s)
 
-    @staticmethod
-    def ball_front(direction):
-        return direction in range(16, 25)
-
-    @staticmethod
-    def ball_behind(direction):
-        return direction in range(0, 9)
+    def rot(self, s):
+        print("Robot rotating with speed={}".format(s))
+        self.rl(s)
+        self.rr(s)
+        self.rb(s)
+        self.rf(s)
 
     @staticmethod
-    def ball_dead_left(direction):
-        return direction == 1
+    def bf(d):
+        return d in range(18, 22)
 
     @staticmethod
-    def ball_dead_right(direction):
-        return direction == 9
+    def bb(d):
+        return d in range(2, 6)
 
     @staticmethod
-    def north_west(direction):
-        return direction in {2, 3, 4}
+    def bdl(d):
+        return d == 1
 
     @staticmethod
-    def north_east(direction):
-        return direction in {6, 7, 8}
+    def bdr(d):
+        return d == 9
 
     @staticmethod
-    def south_west(direction):
-        return direction in {6, 7, 8}
+    def nw(d):
+        return d in {2, 3, 4}
 
     @staticmethod
-    def south_east(direction):
-        return direction in {2, 3, 4}
+    def ne(d):
+        return d in {6, 7, 8}
 
     @staticmethod
-    def ball_undetected(direction):
-        return direction == 0
+    def sw(d):
+        return d in {6, 7, 8}
 
-    def stop_all_motors(self):
-        self.run_back_motor(0)
-        self.run_front_motor(0)
-        self.run_left_motor(0)
-        self.run_right_motor(0)
+    @staticmethod
+    def se(d):
+        return d in {2, 3, 4}
 
-    def face_ball(self, speed):
+    @staticmethod
+    def bu(d):
+        return d == 0
+
+    def srs(self, f, b):
+        return self.bf(f) or self.bb(b)
+
+    def fb(self, s):
         while True:
-            signal = self.read_sensor()
-            print(signal)
-            if not self.ball_front(signal[0]):
-                self.robot_rotate(speed)
+            sig = self.rd()
+            print(sig)
+            if sig[0] != 20:
+                self.rot(s)
             else:
-                self.stop_all_motors()
+                self.stop()
                 print("Ball is in the front")
                 break
 
-    def should_robot_stop(self, front_sensor_angle, back_sensor_angle):
-        return self.ball_front(front_sensor_angle) or self.ball_behind(back_sensor_angle)
-
-    def kick_ball_and_stop(self, speed):
-        self.go_forward(speed)
+    def kb(self, s):
+        self.gf(s)
         while True:
-            signal = self.read_sensor()
-            if self.should_robot_stop(signal[0], signal[2]):
-                self.stop_all_motors()
+            sig = self.rd()
+            if self.srs(sig[0], sig[2]):
+                self.stop()
                 break
 
-    def main(self):
+    async def main(self):
         while True:
-            front_sensor_angle, front_sensor_strength, back_sensor_angle, back_sensor_strength = self.read_sensor()
-            delta_front = front_sensor_angle - 20
-            delta_back = back_sensor_angle - 20
+            f, _, b, _ = self.rd()
+            df = f - 20
+            db = b - 20
+            print(f, b)
 
-            print(front_sensor_angle, back_sensor_angle)
-
-            if front_sensor_angle != 0 and back_sensor_angle in self.VALID_FRONT_SPREAD:
+            if f != 0 and b in self.vfs:
                 print("front sensor activated")
-                vx = delta_front * self.turn_gain
-                if front_sensor_angle in {12, 16, 20, 24, 28}:
-                    self.run_front_motor(0)
-                    self.run_back_motor(0)
-                    self.go_forward(self.drive_speed)
-                elif front_sensor_angle in {4, 32}:
-                    self.run_front_motor(0)
-                    self.run_back_motor(0)
-                    self.go_backwards(self.drive_speed)
-                else:
-                    self.go_forward(self.drive_speed)
-                    self.go_right(vx)
-            elif back_sensor_angle != 0 and front_sensor_angle == 0:
+                if f in {8, 12, 16}:
+                    self.gl(self.ds)
+                    self.gf(self.ds)
+                elif f in {4}:
+                    self.gb(self.ds)
+                    self.gl(self.ds)
+                elif f in {28} or b in {24}:
+                    self.gb(self.ds)
+                    self.gr(self.ds)
+                elif f in {20, 24}:
+                    self.gr(self.ds)
+                    self.gf(self.ds)
+
+            elif b != 0 and f == 0:
                 print("back sensor activated")
-                vx = delta_back * self.turn_gain
-                print("vx =", vx)
-                if back_sensor_angle in {16, 20, 24}:
-                    self.run_right_motor(0)
-                    self.run_left_motor(0)
-                    self.go_left(self.drive_speed)
-                elif back_sensor_angle in {0, 4, 8, 32, 36}:
-                    self.run_front_motor(0)
-                    self.run_back_motor(0)
-                    self.go_backwards(self.drive_speed)
+                if b in {32, 28}:
+                    self.gl(self.ds)
+                    self.gb(self.ds)
+                elif b in {36}:
+                    self.gr(self.ds)
+                    self.gb(self.ds)
+                elif b in {4, 8, 12, 16}:
+                    self.gb(self.ds)
+                    self.gr(self.ds)
                 else:
-                    self.run_front_motor(0)
-                    self.run_back_motor(0)
-                    self.go_backwards(self.drive_speed)
+                    self.gb(self.ds)
+                    self.gr(self.ds)
+
+            await wait(10)
 
 
-def run():
-    robot = MovementRobot()
-    try:
-        while True:
-            robot.main()
-            wait(10)
-    except KeyboardInterrupt:
-        robot.stop_all_motors()
-
-
-if __name__ == "__main__":
-    run()
+run_task(MR().main)

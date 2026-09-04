@@ -24,6 +24,7 @@ RECOVERY_CHECK_SCALE_YAW = 180# yaw magnitude (deg) at which the interval bottom
 
 _yaw_offcourse_start = None
 _yaw_filtered = None
+_yaw_offset = 0
 _correcting = False
 _last_correction = 0
 _last_recovery_check = 0
@@ -34,7 +35,12 @@ def log(message, *values):
 
 
 def get_yaw():
-    return motion_sensor.tilt_angles()[0]
+    return motion_sensor.tilt_angles()[0] - _yaw_offset
+
+
+def set_yaw_reference():
+    global _yaw_offset
+    _yaw_offset = motion_sensor.tilt_angles()[0]
 
 
 def filtered_yaw():
@@ -306,4 +312,5 @@ class Robot:
             await runloop.sleep_ms(10)
 
 
+set_yaw_reference()
 runloop.run(Robot().main())

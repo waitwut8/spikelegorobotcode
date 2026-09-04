@@ -135,9 +135,7 @@ class Sensor:
 
 
 class SimulatedSensor:
-    # Each pattern is a list of front/back sensor values that gets looped over.
-    # Add new modes here — the index math below no longer hardcodes a length,
-    # so any pattern length "just works" (this is what fixed the strafe_sweep crash).
+    
     _SWEEP = [1] * 5 + [3] * 5 + [5] * 5 + [7] * 5 + [9] * 5 + [7] * 5 + [5] * 5 + [3] * 5
 
     PATTERNS = {
